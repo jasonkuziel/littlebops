@@ -34,7 +34,7 @@ export default function SuccessPage() {
             clearInterval(interval); clearInterval(timer);
           }
         })
-        .catch(function() {});
+        .catch(function(err) { console.error("Status check failed:", err); });
     }, 5000);
 
     return function() { clearInterval(interval); clearInterval(timer); };

@@ -9,7 +9,6 @@ export async function POST(request) {
   try {
     var body = await request.json();
 
-    console.log("Replicate webhook received! Status: " + body.status);
 
     if (body.status !== "succeeded") {
       console.error("Video generation failed:", body.error || "Unknown error");
@@ -27,7 +26,6 @@ export async function POST(request) {
       return NextResponse.json({ received: true });
     }
 
-    console.log("Video generated! Replicate URL: " + videoUrl);
 
     // The prediction ID is in the body
     var predictionId = body.id;
@@ -56,10 +54,13 @@ export async function POST(request) {
       return NextResponse.json({ received: true });
     }
 
-    console.log("Found order for " + orderData.childName + "! Saving video...");
 
     // Download the video from Replicate and save to our Blob storage
     var videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      console.error("Failed to download video: " + videoResponse.status);
+      return NextResponse.json({ received: true });
+    }
     var videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
 
     var safeName = orderData.childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
@@ -70,7 +71,6 @@ export async function POST(request) {
       contentType: "video/mp4",
     });
 
-    console.log("Video saved! URL: " + blob.url);
 
     // Update the order with the video URL
     orderData.videoUrl = blob.url;
@@ -81,7 +81,6 @@ export async function POST(request) {
       contentType: "application/json",
     });
 
-    console.log("Order updated with video for " + orderData.childName + "!");
 
   } catch (error) {
     console.error("Video webhook error:", error);

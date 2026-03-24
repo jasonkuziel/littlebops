@@ -11,23 +11,18 @@ export const maxDuration = 60;
 export async function POST(request) {
   try {
     var body = await request.json();
-    console.log("Suno callback received!");
-    console.log("Status: " + (body.data && body.data.status));
 
     var taskData = body.data;
     if (!taskData) {
-      console.log("No data in callback body");
       return NextResponse.json({ received: true });
     }
 
     var taskId = taskData.taskId;
     var status = taskData.status;
 
-    console.log("Task ID: " + taskId + " | Status: " + status);
 
     // Only process completed tasks
     if (status !== "SUCCESS" && status !== "FIRST_SUCCESS") {
-      console.log("Task not complete yet, ignoring callback");
       return NextResponse.json({ received: true });
     }
 
@@ -39,7 +34,6 @@ export async function POST(request) {
     }
 
     var audioUrl = sunoData[0].audioUrl;
-    console.log("Audio URL: " + audioUrl);
 
     // Find the order that matches this task ID
     var { blobs } = await list({ prefix: "orders/" });
@@ -65,10 +59,8 @@ export async function POST(request) {
       return NextResponse.json({ received: true });
     }
 
-    console.log("Found order for " + orderData.childName + "!");
 
     // Download the audio file
-    console.log("Downloading audio...");
     var audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
       console.error("Failed to download audio: " + audioResponse.status);
@@ -76,7 +68,6 @@ export async function POST(request) {
     }
 
     var audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-    console.log("Audio downloaded! Size: " + (audioBuffer.length / 1024 / 1024).toFixed(1) + "MB");
 
     // Save to Vercel Blob
     var safeName = orderData.childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
@@ -86,7 +77,6 @@ export async function POST(request) {
       access: "public",
       contentType: "audio/mpeg",
     });
-    console.log("Song saved! URL: " + blob.url);
 
     // Update order to complete
     orderData.songUrl = blob.url;
@@ -97,12 +87,10 @@ export async function POST(request) {
       access: "public",
       contentType: "application/json",
     });
-    console.log("Order updated to complete!");
 
     // Send email
     if (orderData.customerEmail) {
       try {
-        console.log("Sending email to " + orderData.customerEmail + "...");
         await sendSongReadyEmail({
           to: orderData.customerEmail,
           childName: orderData.childName,
@@ -110,13 +98,11 @@ export async function POST(request) {
           lyrics: orderData.lyrics,
           successPageUrl: orderData.successPageUrl,
         });
-        console.log("Email sent!");
       } catch (emailError) {
         console.error("Email failed (non-critical):", emailError.message);
       }
     }
 
-    console.log("Pipeline complete for " + orderData.childName + "! 🎵");
 
   } catch (error) {
     console.error("Suno callback error:", error);

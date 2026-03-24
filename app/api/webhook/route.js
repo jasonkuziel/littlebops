@@ -25,30 +25,26 @@ export async function POST(request) {
 
     if (event.type === "checkout.session.completed") {
       var session = event.data.object;
-      var metadata = session.metadata;
+      var metadata = session.metadata || {};
       var customerEmail = session.customer_details && session.customer_details.email;
       var appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://tunetots.vercel.app").replace(/\/+$/, "");
       var successPageUrl = appUrl + "/success?session_id=" + session.id;
       var genre = metadata.genre || "pop";
       var mood = metadata.mood || "energetic";
 
-      console.log("Payment received for " + metadata.childName + "!");
-      console.log("Genre: " + genre + " | Mood: " + mood);
+      if (!metadata.childName) {
+        console.error("Missing childName in session metadata for session: " + session.id);
+        return NextResponse.json({ error: "Missing childName" }, { status: 400 });
+      }
 
       try {
         // Step 1: Generate AI lyrics via Claude
-        console.log("Step 1: Generating AI lyrics...");
         var lyrics = await generateLyrics(
           metadata.childName, metadata.childAge, metadata.childStory, genre, mood
         );
-        console.log("Lyrics generated!");
-
         // Step 2: Submit Suno generation (don't wait for it)
-        console.log("Step 2: Submitting Suno generation...");
         var callbackUrl = appUrl + "/api/suno-callback";
         var taskId = await submitSunoGeneration(lyrics, metadata.childName, genre, mood, callbackUrl);
-        console.log("Suno task submitted! ID: " + taskId);
-
         // Step 3: Save order with "generating" status
         var orderData = {
           sessionId: session.id,
@@ -70,9 +66,6 @@ export async function POST(request) {
           access: "public",
           contentType: "application/json",
         });
-        console.log("Order saved with generating status!");
-        console.log("Suno will call back when the song is ready.");
-
       } catch (err) {
         console.error("Pipeline failed:", err.message);
         try {

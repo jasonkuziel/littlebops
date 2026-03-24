@@ -25,7 +25,7 @@ export async function GET(request) {
     }
 
     var orderResponse = await fetch(orderBlob.url);
-    var text = await orderResponse.text();
+    var text = (await orderResponse.text()).trim();
 
     if (!text.startsWith("{")) {
       return NextResponse.json({ status: "processing" });
@@ -54,7 +54,7 @@ export async function GET(request) {
           { headers: { "Authorization": "Bearer " + process.env.KIE_API_KEY } }
         );
 
-        var kieText = await kieResponse.text();
+        var kieText = (await kieResponse.text()).trim();
 
         if (kieText.startsWith("{")) {
           var kieData = JSON.parse(kieText);
@@ -86,19 +86,15 @@ export async function GET(request) {
                 access: "public",
                 contentType: "application/json",
               });
-              console.log("Locked order as completing");
 
               // Download the audio
-              console.log("Downloading: " + audioUrl);
               var audioResp = await fetch(audioUrl);
 
               if (audioResp.ok) {
                 var audioBuffer = Buffer.from(await audioResp.arrayBuffer());
-                console.log("Downloaded: " + (audioBuffer.length / 1024 / 1024).toFixed(1) + "MB");
 
                 // If file is empty or too small, reset and retry next poll
                 if (audioBuffer.length < 10000) {
-                  console.log("Audio too small (" + audioBuffer.length + " bytes), retrying next poll");
                   orderData.status = "generating";
                   await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
                     access: "public", contentType: "application/json",
@@ -123,7 +119,6 @@ export async function GET(request) {
                   access: "public",
                   contentType: "application/json",
                 });
-                console.log("DONE! " + blob.url);
 
                 // Now re-read the order to check if another poll already sent email
                 try {
@@ -131,18 +126,19 @@ export async function GET(request) {
                   for (var j = 0; j < checkBlobs.length; j++) {
                     if (checkBlobs[j].pathname.includes(sessionId)) {
                       var checkResp = await fetch(checkBlobs[j].url);
-                      var checkText = await checkResp.text();
+                      var checkText = (await checkResp.text()).trim();
                       if (checkText.startsWith("{")) {
                         var checkOrder = JSON.parse(checkText);
                         if (checkOrder.emailSent) {
-                          console.log("Email already sent by another poll, skipping");
                           return NextResponse.json(orderData);
                         }
                       }
                       break;
                     }
                   }
-                } catch (e) {}
+                } catch (e) {
+                  console.error("Email dedup check failed:", e.message);
+                }
 
                 // Send email exactly once
                 if (orderData.customerEmail) {
@@ -155,7 +151,6 @@ export async function GET(request) {
                       lyrics: orderData.lyrics,
                       successPageUrl: orderData.successPageUrl,
                     });
-                    console.log("Email sent!");
 
                     // Save emailSent flag immediately
                     orderData.emailSent = true;
@@ -171,7 +166,7 @@ export async function GET(request) {
                 return NextResponse.json(orderData);
               } else {
                 // Download failed — reset to generating
-                console.log("Download failed: " + audioResp.status);
+                console.error("Audio download failed: " + audioResp.status);
                 orderData.status = "generating";
                 await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
                   access: "public", contentType: "application/json",
@@ -196,7 +191,9 @@ export async function GET(request) {
           await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
             access: "public", contentType: "application/json",
           });
-        } catch (e) {}
+        } catch (e) {
+          console.error("Failed to reset order lock:", e.message);
+        }
       }
     }
 
