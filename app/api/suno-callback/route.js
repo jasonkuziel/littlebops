@@ -85,11 +85,38 @@ export async function POST(request) {
       return NextResponse.json({ received: true });
     }
 
-    console.log("Found order for " + orderData.childName + "!");
+    console.log("Found order for " + orderData.childName + "! Status: " + orderData.status);
 
-    // Skip if already completed (deduplication)
+    // If check-status already completed the order, just send the email
     if (orderData.status === "complete" || orderData.status === "completing") {
-      console.log("Order already " + orderData.status + ", skipping");
+      console.log("Order already " + orderData.status + " (completed by check-status)");
+      if (!orderData.emailSent && orderData.customerEmail && process.env.RESEND_API_KEY) {
+        try {
+          orderData.emailSent = true;
+          await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
+            access: "public",
+            contentType: "application/json",
+          });
+          const { sendSongReadyEmail } = await import("@/lib/email");
+          await sendSongReadyEmail({
+            to: orderData.customerEmail,
+            childName: orderData.childName,
+            songUrl: orderData.songUrl,
+            lyrics: orderData.lyrics,
+            successPageUrl: orderData.successPageUrl,
+          });
+          console.log("Email sent to " + orderData.customerEmail);
+        } catch (emailErr) {
+          console.error("Email send error:", emailErr.message);
+          orderData.emailSent = false;
+          await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
+            access: "public",
+            contentType: "application/json",
+          });
+        }
+      } else {
+        console.log("Email already sent or not needed, skipping");
+      }
       return NextResponse.json({ received: true });
     }
 
@@ -114,12 +141,11 @@ export async function POST(request) {
     });
     console.log("Song saved! URL: " + blob.url);
 
-    // Update order to complete — save with emailSent=true BEFORE sending
-    // to prevent check-status from also sending during the race window
+    // Update order to complete
     orderData.songUrl = blob.url;
     orderData.status = "complete";
     orderData.completedAt = new Date().toISOString();
-    orderData.emailSent = !!orderData.customerEmail;
+    orderData.emailSent = !!(orderData.customerEmail && process.env.RESEND_API_KEY);
 
     await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
       access: "public",
@@ -127,7 +153,7 @@ export async function POST(request) {
     });
     console.log("Order updated to complete!");
 
-    // Now send email
+    // Send email
     if (orderData.customerEmail && process.env.RESEND_API_KEY) {
       try {
         const { sendSongReadyEmail } = await import("@/lib/email");
@@ -140,7 +166,6 @@ export async function POST(request) {
         });
         console.log("Email sent to " + orderData.customerEmail);
       } catch (emailErr) {
-        // If email fails, reset flag so check-status fallback can retry
         console.error("Email send error:", emailErr.message);
         orderData.emailSent = false;
         await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
@@ -150,7 +175,7 @@ export async function POST(request) {
       }
     }
 
-    console.log("Pipeline complete for " + orderData.childName + "! 🎵");
+    console.log("Pipeline complete for " + orderData.childName + "!");
 
   } catch (error) {
     console.error("Suno callback error:", error);
