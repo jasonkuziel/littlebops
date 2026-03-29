@@ -21,35 +21,44 @@ export async function POST(request) {
 
     const body = await request.json();
     console.log("Suno callback received!");
-    console.log("Callback body keys: " + Object.keys(body).join(", "));
-    console.log("Callback body: " + JSON.stringify(body).substring(0, 500));
-    console.log("Status: " + (body.data && body.data.status));
 
-    const taskData = body.data;
-    if (!taskData) {
-      console.log("No data in callback body");
+    // KIE.ai callback format can vary — extract fields flexibly
+    const taskData = body.data || body;
+    const taskId = taskData.taskId || taskData.task_id || body.taskId || body.task_id;
+    const status = taskData.status || body.status;
+
+    console.log("Task ID: " + (taskId || "unknown") + " | Status: " + (status || "unknown"));
+
+    if (!taskId) {
+      console.log("No taskId in callback, ignoring");
       return NextResponse.json({ received: true });
     }
-
-    const taskId = taskData.taskId;
-    const status = taskData.status;
-
-    console.log("Task ID: " + taskId + " | Status: " + status);
 
     // Only process completed tasks
-    if (status !== "SUCCESS" && status !== "FIRST_SUCCESS") {
-      console.log("Task not complete yet, ignoring callback");
+    const successStatuses = ["SUCCESS", "FIRST_SUCCESS", "success", "completed"];
+    if (!successStatuses.includes(status)) {
+      console.log("Task not complete yet (" + status + "), ignoring callback");
       return NextResponse.json({ received: true });
     }
 
-    // Get the audio URL from the response
-    const sunoData = taskData.response && taskData.response.sunoData;
-    if (!sunoData || sunoData.length === 0) {
-      console.error("No sunoData in callback");
+    // Extract audio URL from various possible response formats
+    const resp = taskData.response || body.response;
+    let audioUrl = null;
+    if (resp) {
+      if (resp.sunoData && resp.sunoData.length > 0) {
+        audioUrl = resp.sunoData[0].audioUrl || resp.sunoData[0].streamAudioUrl;
+      } else if (Array.isArray(resp) && resp.length > 0 && typeof resp[0] === "string") {
+        audioUrl = resp[0];
+      } else if (typeof resp === "string" && resp.startsWith("http")) {
+        audioUrl = resp;
+      }
+    }
+    if (!audioUrl) audioUrl = taskData.audioUrl || body.audioUrl;
+
+    if (!audioUrl) {
+      console.error("No audio URL found in callback");
       return NextResponse.json({ received: true });
     }
-
-    const audioUrl = sunoData[0].audioUrl;
     console.log("Audio URL: " + audioUrl);
 
     // Find the order that matches this task ID
@@ -77,6 +86,12 @@ export async function POST(request) {
     }
 
     console.log("Found order for " + orderData.childName + "!");
+
+    // Skip if already completed (deduplication)
+    if (orderData.status === "complete" || orderData.status === "completing") {
+      console.log("Order already " + orderData.status + ", skipping");
+      return NextResponse.json({ received: true });
+    }
 
     // Download the audio file
     console.log("Downloading audio...");
@@ -113,7 +128,7 @@ export async function POST(request) {
     console.log("Order updated to complete!");
 
     // Now send email
-    if (orderData.customerEmail) {
+    if (orderData.customerEmail && process.env.RESEND_API_KEY) {
       try {
         const { sendSongReadyEmail } = await import("@/lib/email");
         await sendSongReadyEmail({
@@ -129,7 +144,7 @@ export async function POST(request) {
         console.error("Email send error:", emailErr.message);
         orderData.emailSent = false;
         await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-          access: "private",
+          access: "public",
           contentType: "application/json",
         });
       }

@@ -46,11 +46,11 @@ export default function SuccessPage() {
         });
     }, 5000);
 
-    // Timeout after 5 minutes — something is seriously wrong
+    // Timeout after 10 minutes — something is seriously wrong
     var timeout = setTimeout(function() {
       setStatus("failed");
       clearInterval(interval); clearInterval(timer);
-    }, 300000);
+    }, 600000);
 
     return function() { clearInterval(interval); clearInterval(timer); clearTimeout(timeout); };
   }, []);
@@ -103,7 +103,7 @@ export default function SuccessPage() {
             Creating your song
           </h1>
           <p style={{ fontFamily: "'DM Sans'", fontSize: 16, color: C.textMid, marginBottom: 36 }}>
-            This usually takes about 60 seconds
+            This usually takes 1–3 minutes
           </p>
 
           {/* Progress steps */}
@@ -162,8 +162,8 @@ export default function SuccessPage() {
           </h1>
           <p style={{ fontFamily: "'DM Sans'", fontSize: 16, color: C.textMid, lineHeight: 1.6, marginBottom: 28 }}>
             {status === "failed"
-              ? "We hit a snag creating the song. Our team has been notified and you'll receive a full refund."
-              : "We couldn't find this order. Please check your email for the song link."}
+              ? "We hit a snag creating the song. Please contact us at hello@getlittlebops.com and we'll make it right."
+              : "We couldn't find this order. Please check your email for the song link, or contact us at hello@getlittlebops.com."}
           </p>
           <a href="/" style={{
             fontFamily: "'DM Sans'", fontWeight: 700, fontSize: 15, color: C.coral, textDecoration: "none",

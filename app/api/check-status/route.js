@@ -20,7 +20,7 @@ export async function GET(request) {
 
     if (orderData.status === "complete" || orderData.status === "failed") {
       // Fallback: send email if suno-callback didn't send it
-      if (orderData.status === "complete" && !orderData.emailSent && orderData.customerEmail) {
+      if (orderData.status === "complete" && !orderData.emailSent && orderData.customerEmail && process.env.RESEND_API_KEY) {
         try {
           const { sendSongReadyEmail } = await import("@/lib/email");
           await sendSongReadyEmail({
@@ -171,7 +171,7 @@ async function handleGeneratingOrder(orderData, sessionId) {
       orderData.status = "complete";
       orderData.completedAt = new Date().toISOString();
       // Save with emailSent=true first to prevent duplicate sends
-      const shouldEmail = orderData.customerEmail && !orderData.emailSent;
+      const shouldEmail = orderData.customerEmail && !orderData.emailSent && process.env.RESEND_API_KEY;
       if (shouldEmail) orderData.emailSent = true;
       await saveOrder(orderData);
       console.log("DONE! " + songUrl);
