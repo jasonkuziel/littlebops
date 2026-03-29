@@ -164,7 +164,6 @@ async function handleGeneratingOrder(orderData, sessionId) {
       await saveOrder(orderData);
       console.log("DONE! " + songUrl);
 
-      // Email is sent by suno-callback only (single source of truth)
       return NextResponse.json(orderData);
     }
 

@@ -34,6 +34,5 @@ Personalized AI-generated songs for kids.
 - `GOOGLE_CLIENT_ID` — From Google Cloud Console (for YouTube uploads)
 - `GOOGLE_CLIENT_SECRET` — From Google Cloud Console
 - `GOOGLE_REFRESH_TOKEN` — OAuth refresh token for YouTube API
-- `RESEND_API_KEY` — From resend.com (for email delivery)
 - `NEXT_PUBLIC_APP_URL` — Your live URL (e.g. https://getlittlebops.com)
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob storage token (auto-set on Vercel)

@@ -5,7 +5,7 @@ export const maxDuration = 60;
 
 /**
  * KIE.ai calls this endpoint when a Suno music generation task completes.
- * We find the matching order, download the audio, save it, and email the customer.
+ * We find the matching order, download the audio, and save it.
  *
  * Authenticated via a secret token in the callback URL query string.
  */
@@ -87,36 +87,9 @@ export async function POST(request) {
 
     console.log("Found order for " + orderData.childName + "! Status: " + orderData.status);
 
-    // If check-status already completed the order, just send the email
+    // If check-status already completed the order, nothing more to do
     if (orderData.status === "complete" || orderData.status === "completing") {
       console.log("Order already " + orderData.status + " (completed by check-status)");
-      if (!orderData.emailSent && orderData.customerEmail && process.env.RESEND_API_KEY) {
-        try {
-          orderData.emailSent = true;
-          await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-            access: "public",
-            contentType: "application/json",
-          });
-          const { sendSongReadyEmail } = await import("@/lib/email");
-          await sendSongReadyEmail({
-            to: orderData.customerEmail,
-            childName: orderData.childName,
-            songUrl: orderData.songUrl,
-            lyrics: orderData.lyrics,
-            successPageUrl: orderData.successPageUrl,
-          });
-          console.log("Email sent to " + orderData.customerEmail);
-        } catch (emailErr) {
-          console.error("Email send error:", emailErr.message);
-          orderData.emailSent = false;
-          await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-            access: "public",
-            contentType: "application/json",
-          });
-        }
-      } else {
-        console.log("Email already sent or not needed, skipping");
-      }
       return NextResponse.json({ received: true });
     }
 
@@ -145,35 +118,12 @@ export async function POST(request) {
     orderData.songUrl = blob.url;
     orderData.status = "complete";
     orderData.completedAt = new Date().toISOString();
-    orderData.emailSent = !!(orderData.customerEmail && process.env.RESEND_API_KEY);
 
     await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
       access: "public",
       contentType: "application/json",
     });
     console.log("Order updated to complete!");
-
-    // Send email
-    if (orderData.customerEmail && process.env.RESEND_API_KEY) {
-      try {
-        const { sendSongReadyEmail } = await import("@/lib/email");
-        await sendSongReadyEmail({
-          to: orderData.customerEmail,
-          childName: orderData.childName,
-          songUrl: orderData.songUrl,
-          lyrics: orderData.lyrics,
-          successPageUrl: orderData.successPageUrl,
-        });
-        console.log("Email sent to " + orderData.customerEmail);
-      } catch (emailErr) {
-        console.error("Email send error:", emailErr.message);
-        orderData.emailSent = false;
-        await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-          access: "public",
-          contentType: "application/json",
-        });
-      }
-    }
 
     console.log("Pipeline complete for " + orderData.childName + "!");
 
