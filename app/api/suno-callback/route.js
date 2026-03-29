@@ -21,6 +21,8 @@ export async function POST(request) {
 
     const body = await request.json();
     console.log("Suno callback received!");
+    console.log("Callback body keys: " + Object.keys(body).join(", "));
+    console.log("Callback body: " + JSON.stringify(body).substring(0, 500));
     console.log("Status: " + (body.data && body.data.status));
 
     const taskData = body.data;
@@ -105,7 +107,7 @@ export async function POST(request) {
     orderData.emailSent = !!orderData.customerEmail;
 
     await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-      access: "private",
+      access: "public",
       contentType: "application/json",
     });
     console.log("Order updated to complete!");

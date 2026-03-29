@@ -78,7 +78,7 @@ async function findOrder(sessionId) {
 
 async function saveOrder(orderData) {
   await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-    access: "private",
+    access: "public",
     contentType: "application/json",
   });
 }

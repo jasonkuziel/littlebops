@@ -89,7 +89,7 @@ export async function POST(request) {
     orderData.videoStatus = "complete";
 
     await put(orderBlob.pathname, JSON.stringify(orderData), {
-      access: "private",
+      access: "public",
       contentType: "application/json",
     });
 

@@ -78,7 +78,7 @@ export async function POST(request) {
         };
 
         await put("orders/" + session.id + ".json", JSON.stringify(orderData), {
-          access: "private",
+          access: "public",
           contentType: "application/json",
         });
         console.log("Order saved with generating status!");
@@ -93,7 +93,7 @@ export async function POST(request) {
             error: err.message,
             status: "failed",
             createdAt: new Date().toISOString(),
-          }), { access: "private", contentType: "application/json" });
+          }), { access: "public", contentType: "application/json" });
         } catch (e) {
           console.error("Could not save failed order:", e.message);
         }
