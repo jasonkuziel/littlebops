@@ -19,24 +19,6 @@ export async function GET(request) {
     }
 
     if (orderData.status === "complete" || orderData.status === "failed") {
-      // Fallback: send email if suno-callback didn't send it
-      if (orderData.status === "complete" && !orderData.emailSent && orderData.customerEmail && process.env.RESEND_API_KEY) {
-        try {
-          const { sendSongReadyEmail } = await import("@/lib/email");
-          await sendSongReadyEmail({
-            to: orderData.customerEmail,
-            childName: orderData.childName,
-            songUrl: orderData.songUrl,
-            lyrics: orderData.lyrics,
-            successPageUrl: orderData.successPageUrl,
-          });
-          console.log("Fallback email sent!");
-          orderData.emailSent = true;
-          await saveOrder(orderData);
-        } catch (e) {
-          console.error("Fallback email err:", e.message);
-        }
-      }
       return NextResponse.json(orderData);
     }
 
@@ -155,6 +137,13 @@ async function handleGeneratingOrder(orderData, sessionId) {
       // Lock to prevent duplicate processing
       orderData.status = "completing";
       await saveOrder(orderData);
+
+      // Re-read to verify we won the lock (prevent concurrent polls both downloading)
+      const freshOrder = await findOrder(sessionId);
+      if (freshOrder && freshOrder.status !== "completing") {
+        console.log("Another poll already completed this order, skipping");
+        return NextResponse.json({ status: "processing", childName: orderData.childName });
+      }
       console.log("Locked order as completing");
 
       console.log("Downloading: " + audioUrl);
@@ -170,31 +159,10 @@ async function handleGeneratingOrder(orderData, sessionId) {
       orderData.songUrl = songUrl;
       orderData.status = "complete";
       orderData.completedAt = new Date().toISOString();
-      // Save with emailSent=true first to prevent duplicate sends
-      const shouldEmail = orderData.customerEmail && !orderData.emailSent && process.env.RESEND_API_KEY;
-      if (shouldEmail) orderData.emailSent = true;
       await saveOrder(orderData);
       console.log("DONE! " + songUrl);
 
-      // Send email (fallback path — suno-callback is primary)
-      if (shouldEmail) {
-        try {
-          const { sendSongReadyEmail } = await import("@/lib/email");
-          await sendSongReadyEmail({
-            to: orderData.customerEmail,
-            childName: orderData.childName,
-            songUrl: orderData.songUrl,
-            lyrics: orderData.lyrics,
-            successPageUrl: orderData.successPageUrl,
-          });
-          console.log("Email sent!");
-        } catch (e) {
-          console.error("Email err:", e.message);
-          orderData.emailSent = false;
-          await saveOrder(orderData);
-        }
-      }
-
+      // Email is sent by suno-callback only (single source of truth)
       return NextResponse.json(orderData);
     }
 
