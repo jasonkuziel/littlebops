@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookEvent } from "@/lib/stripe";
 import { generateLyrics, submitSunoGeneration } from "@/lib/music";
-import { head, put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
 
 export const maxDuration = 60;
 
@@ -28,11 +28,13 @@ export async function POST(request) {
 
       // Idempotency: skip if this session was already processed
       try {
-        await head("orders/" + session.id + ".json");
-        console.log("Order " + session.id + " already exists, skipping duplicate webhook");
-        return NextResponse.json({ received: true });
+        const { blobs } = await list({ prefix: "orders/" + session.id });
+        if (blobs.length > 0) {
+          console.log("Order " + session.id + " already exists, skipping duplicate webhook");
+          return NextResponse.json({ received: true });
+        }
       } catch (e) {
-        // Blob not found — this is a new order, proceed
+        // List failed — proceed with processing to be safe
       }
 
       const customerEmail = session.customer_details && session.customer_details.email;

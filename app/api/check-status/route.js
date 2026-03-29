@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { head, put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
 
 export const maxDuration = 60;
 
@@ -61,16 +61,17 @@ async function findOrder(sessionId) {
   if (!safeId) return null;
 
   try {
-    // Direct lookup by known pathname instead of scanning all blobs
-    const blobInfo = await head("orders/" + safeId + ".json");
-    const response = await fetch(blobInfo.downloadUrl);
+    // Use targeted prefix to find the specific order blob
+    const { blobs } = await list({ prefix: "orders/" + safeId });
+    if (blobs.length === 0) return null;
+
+    const response = await fetch(blobs[0].downloadUrl);
     const text = await response.text();
     if (text.startsWith("{")) {
       return JSON.parse(text);
     }
     return null;
   } catch (e) {
-    // Blob not found
     return null;
   }
 }

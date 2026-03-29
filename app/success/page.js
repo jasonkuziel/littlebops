@@ -1,4 +1,4 @@
-import { head } from "@vercel/blob";
+import { list } from "@vercel/blob";
 import SuccessClient from "./SuccessClient";
 
 export async function generateMetadata({ searchParams }) {
@@ -12,8 +12,9 @@ export async function generateMetadata({ searchParams }) {
     const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
     if (safeId) {
       try {
-        const blobInfo = await head("orders/" + safeId + ".json");
-        const response = await fetch(blobInfo.downloadUrl);
+        const { blobs } = await list({ prefix: "orders/" + safeId });
+        if (blobs.length === 0) throw new Error("not found");
+        const response = await fetch(blobs[0].downloadUrl);
         const text = await response.text();
         if (text.startsWith("{")) {
           const order = JSON.parse(text);
