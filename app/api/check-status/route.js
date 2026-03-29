@@ -115,34 +115,6 @@ async function downloadAndSaveAudio(audioUrl, childName) {
   return blob.url;
 }
 
-async function trySendEmail(orderData) {
-  if (!orderData.customerEmail) return;
-
-  // Check if another poll already sent the email
-  const existingOrder = await findOrder(orderData.sessionId);
-  if (existingOrder && existingOrder.emailSent) {
-    console.log("Email already sent by another poll, skipping");
-    return;
-  }
-
-  try {
-    const { sendSongReadyEmail } = await import("@/lib/email");
-    await sendSongReadyEmail({
-      to: orderData.customerEmail,
-      childName: orderData.childName,
-      songUrl: orderData.songUrl,
-      lyrics: orderData.lyrics,
-      successPageUrl: orderData.successPageUrl,
-    });
-    console.log("Email sent!");
-
-    orderData.emailSent = true;
-    await saveOrder(orderData);
-  } catch (e) {
-    console.error("Email err:", e.message);
-  }
-}
-
 const FAILED_STATUSES = ["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "SENSITIVE_WORD_ERROR"];
 
 async function handleGeneratingOrder(orderData, sessionId) {
@@ -173,11 +145,8 @@ async function handleGeneratingOrder(orderData, sessionId) {
       orderData.songUrl = songUrl;
       orderData.status = "complete";
       orderData.completedAt = new Date().toISOString();
-      orderData.emailSent = false;
       await saveOrder(orderData);
       console.log("DONE! " + songUrl);
-
-      await trySendEmail(orderData);
 
       return NextResponse.json(orderData);
     }

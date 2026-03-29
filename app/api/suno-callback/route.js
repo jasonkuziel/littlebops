@@ -92,6 +92,7 @@ export async function POST(request) {
     orderData.songUrl = blob.url;
     orderData.status = "complete";
     orderData.completedAt = new Date().toISOString();
+    orderData.emailSent = false;
 
     await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
       access: "public",
@@ -99,7 +100,7 @@ export async function POST(request) {
     });
     console.log("Order updated to complete!");
 
-    // Send email
+    // Send email (only place emails are sent — check-status does NOT send emails)
     if (orderData.customerEmail) {
       try {
         console.log("Sending email to " + orderData.customerEmail + "...");
@@ -111,6 +112,12 @@ export async function POST(request) {
           successPageUrl: orderData.successPageUrl,
         });
         console.log("Email sent!");
+
+        orderData.emailSent = true;
+        await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
+          access: "public",
+          contentType: "application/json",
+        });
       } catch (emailError) {
         console.error("Email failed (non-critical):", emailError.message);
       }
