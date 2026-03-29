@@ -15,8 +15,11 @@ export async function GET(request) {
     const orderData = await findOrder(sessionId);
 
     if (!orderData) {
+      console.log("check-status: order not found for " + sessionId);
       return NextResponse.json({ status: "processing" });
     }
+
+    console.log("check-status: " + orderData.childName + " | status=" + orderData.status + " | taskId=" + (orderData.sunoTaskId || "none"));
 
     if (orderData.status === "complete" || orderData.status === "failed") {
       return NextResponse.json(orderData);
@@ -128,9 +131,11 @@ async function handleGeneratingOrder(orderData, sessionId) {
   try {
     const kieData = await pollKieStatus(orderData.sunoTaskId);
     if (!kieData) {
+      console.log("check-status: KIE returned no data for task " + orderData.sunoTaskId);
       return NextResponse.json({ status: "processing", childName: orderData.childName });
     }
 
+    console.log("check-status: KIE status=" + (kieData.status || "unknown"));
     const audioUrl = extractAudioUrl(kieData);
 
     if (audioUrl && audioUrl.startsWith("http")) {
