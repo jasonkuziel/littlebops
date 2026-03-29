@@ -83,6 +83,40 @@ describe("POST /api/create-song", () => {
     );
   });
 
+  test("truncates childName to 100 characters", async () => {
+    const longName = "A".repeat(200);
+    await POST(makeRequest({ childName: longName, story: "loves cats" }));
+
+    const passedData = createCheckoutSession.mock.calls[0][0];
+    expect(passedData.childName.length).toBeLessThanOrEqual(100);
+  });
+
+  test("truncates story to 2000 characters", async () => {
+    const longStory = "a".repeat(3000);
+    await POST(makeRequest({ childName: "Emma", story: longStory }));
+
+    const passedData = createCheckoutSession.mock.calls[0][0];
+    expect(passedData.story.length).toBeLessThanOrEqual(2000);
+  });
+
+  test("rejects invalid genre and falls back to pop", async () => {
+    await POST(
+      makeRequest({ childName: "Emma", story: "test", genre: "metal" })
+    );
+
+    const passedData = createCheckoutSession.mock.calls[0][0];
+    expect(passedData.genre).toBe("pop");
+  });
+
+  test("rejects invalid mood and falls back to energetic", async () => {
+    await POST(
+      makeRequest({ childName: "Emma", story: "test", mood: "angry" })
+    );
+
+    const passedData = createCheckoutSession.mock.calls[0][0];
+    expect(passedData.mood).toBe("energetic");
+  });
+
   test("returns 500 when checkout session creation fails", async () => {
     createCheckoutSession.mockRejectedValueOnce(new Error("Stripe down"));
 

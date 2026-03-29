@@ -10,18 +10,18 @@ export const maxDuration = 60;
  */
 export async function POST(request) {
   try {
-    var body = await request.json();
+    const body = await request.json();
     console.log("Suno callback received!");
     console.log("Status: " + (body.data && body.data.status));
 
-    var taskData = body.data;
+    const taskData = body.data;
     if (!taskData) {
       console.log("No data in callback body");
       return NextResponse.json({ received: true });
     }
 
-    var taskId = taskData.taskId;
-    var status = taskData.status;
+    const taskId = taskData.taskId;
+    const status = taskData.status;
 
     console.log("Task ID: " + taskId + " | Status: " + status);
 
@@ -32,24 +32,24 @@ export async function POST(request) {
     }
 
     // Get the audio URL from the response
-    var sunoData = taskData.response && taskData.response.sunoData;
+    const sunoData = taskData.response && taskData.response.sunoData;
     if (!sunoData || sunoData.length === 0) {
       console.error("No sunoData in callback");
       return NextResponse.json({ received: true });
     }
 
-    var audioUrl = sunoData[0].audioUrl;
+    const audioUrl = sunoData[0].audioUrl;
     console.log("Audio URL: " + audioUrl);
 
     // Find the order that matches this task ID
-    var { blobs } = await list({ prefix: "orders/" });
-    var orderBlob = null;
-    var orderData = null;
+    const { blobs } = await list({ prefix: "orders/" });
+    let orderBlob = null;
+    let orderData = null;
 
-    for (var i = 0; i < blobs.length; i++) {
+    for (let i = 0; i < blobs.length; i++) {
       try {
-        var res = await fetch(blobs[i].url);
-        var data = await res.json();
+        const res = await fetch(blobs[i].url);
+        const data = await res.json();
         if (data.sunoTaskId === taskId) {
           orderBlob = blobs[i];
           orderData = data;
@@ -69,20 +69,20 @@ export async function POST(request) {
 
     // Download the audio file
     console.log("Downloading audio...");
-    var audioResponse = await fetch(audioUrl);
+    const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
       console.error("Failed to download audio: " + audioResponse.status);
       return NextResponse.json({ received: true });
     }
 
-    var audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
     console.log("Audio downloaded! Size: " + (audioBuffer.length / 1024 / 1024).toFixed(1) + "MB");
 
     // Save to Vercel Blob
-    var safeName = orderData.childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-    var filename = "songs/" + safeName + "-" + Date.now() + ".mp3";
+    const safeName = orderData.childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+    const filename = "songs/" + safeName + "-" + Date.now() + ".mp3";
 
-    var blob = await put(filename, audioBuffer, {
+    const blob = await put(filename, audioBuffer, {
       access: "public",
       contentType: "audio/mpeg",
     });

@@ -2,207 +2,199 @@ import { NextResponse } from "next/server";
 import { list, put } from "@vercel/blob";
 
 export async function GET(request) {
-  var url = new URL(request.url);
-  var sessionId = url.searchParams.get("session_id");
+  const url = new URL(request.url);
+  const sessionId = url.searchParams.get("session_id");
 
   if (!sessionId) {
     return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
   }
 
   try {
-    var { blobs } = await list({ prefix: "orders/" });
+    const orderData = await findOrder(sessionId);
 
-    var orderBlob = null;
-    for (var i = 0; i < blobs.length; i++) {
-      if (blobs[i].pathname.includes(sessionId)) {
-        orderBlob = blobs[i];
-        break;
-      }
-    }
-
-    if (!orderBlob) {
+    if (!orderData) {
       return NextResponse.json({ status: "processing" });
     }
 
-    var orderResponse = await fetch(orderBlob.url);
-    var text = await orderResponse.text();
-
-    if (!text.startsWith("{")) {
-      return NextResponse.json({ status: "processing" });
-    }
-
-    var orderData = JSON.parse(text);
-
-    // Already done — return immediately
-    if (orderData.status === "complete") {
+    if (orderData.status === "complete" || orderData.status === "failed") {
       return NextResponse.json(orderData);
     }
 
-    if (orderData.status === "failed") {
-      return NextResponse.json(orderData);
-    }
-
-    // Another poll is already handling this — back off
     if (orderData.status === "completing") {
       return NextResponse.json({ status: "processing", childName: orderData.childName });
     }
 
     if (orderData.status === "generating" && orderData.sunoTaskId) {
-      try {
-        var kieResponse = await fetch(
-          "https://api.kie.ai/api/v1/generate/record-info?taskId=" + orderData.sunoTaskId,
-          { headers: { "Authorization": "Bearer " + process.env.KIE_API_KEY } }
-        );
-
-        var kieText = await kieResponse.text();
-
-        if (kieText.startsWith("{")) {
-          var kieData = JSON.parse(kieText);
-
-          if (kieData.code === 200 && kieData.data) {
-            var taskStatus = kieData.data.status;
-            var resp = kieData.data.response;
-            var audioUrl = null;
-
-            if (resp) {
-              if (resp.sunoData && resp.sunoData.length > 0) {
-                audioUrl = resp.sunoData[0].audioUrl || resp.sunoData[0].streamAudioUrl || null;
-              }
-              if (!audioUrl && Array.isArray(resp) && resp.length > 0) {
-                audioUrl = resp[0];
-              }
-              if (!audioUrl && typeof resp === "string" && resp.startsWith("http")) {
-                audioUrl = resp;
-              }
-            }
-            if (!audioUrl && kieData.data.audioUrl) {
-              audioUrl = kieData.data.audioUrl;
-            }
-
-            if (audioUrl && audioUrl.startsWith("http")) {
-              // LOCK immediately — prevents other polls from starting
-              orderData.status = "completing";
-              await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                access: "public",
-                contentType: "application/json",
-              });
-              console.log("Locked order as completing");
-
-              // Download the audio
-              console.log("Downloading: " + audioUrl);
-              var audioResp = await fetch(audioUrl);
-
-              if (audioResp.ok) {
-                var audioBuffer = Buffer.from(await audioResp.arrayBuffer());
-                console.log("Downloaded: " + (audioBuffer.length / 1024 / 1024).toFixed(1) + "MB");
-
-                // If file is empty or too small, reset and retry next poll
-                if (audioBuffer.length < 10000) {
-                  console.log("Audio too small (" + audioBuffer.length + " bytes), retrying next poll");
-                  orderData.status = "generating";
-                  await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                    access: "public", contentType: "application/json",
-                  });
-                  return NextResponse.json({ status: "processing", childName: orderData.childName });
-                }
-
-                // Save song to blob storage
-                var safeName = orderData.childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-                var blob = await put("songs/" + safeName + "-" + Date.now() + ".mp3", audioBuffer, {
-                  access: "public",
-                  contentType: "audio/mpeg",
-                });
-
-                // Mark complete with emailSent=false FIRST, save immediately
-                orderData.songUrl = blob.url;
-                orderData.status = "complete";
-                orderData.completedAt = new Date().toISOString();
-                orderData.emailSent = false;
-
-                await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                  access: "public",
-                  contentType: "application/json",
-                });
-                console.log("DONE! " + blob.url);
-
-                // Now re-read the order to check if another poll already sent email
-                try {
-                  var { blobs: checkBlobs } = await list({ prefix: "orders/" });
-                  for (var j = 0; j < checkBlobs.length; j++) {
-                    if (checkBlobs[j].pathname.includes(sessionId)) {
-                      var checkResp = await fetch(checkBlobs[j].url);
-                      var checkText = await checkResp.text();
-                      if (checkText.startsWith("{")) {
-                        var checkOrder = JSON.parse(checkText);
-                        if (checkOrder.emailSent) {
-                          console.log("Email already sent by another poll, skipping");
-                          return NextResponse.json(orderData);
-                        }
-                      }
-                      break;
-                    }
-                  }
-                } catch (e) {}
-
-                // Send email exactly once
-                if (orderData.customerEmail) {
-                  try {
-                    var { sendSongReadyEmail } = await import("@/lib/email");
-                    await sendSongReadyEmail({
-                      to: orderData.customerEmail,
-                      childName: orderData.childName,
-                      songUrl: blob.url,
-                      lyrics: orderData.lyrics,
-                      successPageUrl: orderData.successPageUrl,
-                    });
-                    console.log("Email sent!");
-
-                    // Save emailSent flag immediately
-                    orderData.emailSent = true;
-                    await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                      access: "public",
-                      contentType: "application/json",
-                    });
-                  } catch (e) {
-                    console.error("Email err:", e.message);
-                  }
-                }
-
-                return NextResponse.json(orderData);
-              } else {
-                // Download failed — reset to generating
-                console.log("Download failed: " + audioResp.status);
-                orderData.status = "generating";
-                await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                  access: "public", contentType: "application/json",
-                });
-              }
-            }
-
-            if (taskStatus === "CREATE_TASK_FAILED" || taskStatus === "GENERATE_AUDIO_FAILED" || taskStatus === "SENSITIVE_WORD_ERROR") {
-              orderData.status = "failed";
-              await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-                access: "public", contentType: "application/json",
-              });
-              return NextResponse.json(orderData);
-            }
-          }
-        }
-      } catch (pollErr) {
-        console.error("Poll err:", pollErr.message);
-        // Reset lock so next poll can retry
-        try {
-          orderData.status = "generating";
-          await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
-            access: "public", contentType: "application/json",
-          });
-        } catch (e) {}
-      }
+      return await handleGeneratingOrder(orderData, sessionId);
     }
 
     return NextResponse.json({ status: "processing", childName: orderData.childName });
   } catch (error) {
     console.error("Check err:", error.message);
     return NextResponse.json({ status: "processing" });
+  }
+}
+
+async function findOrder(sessionId) {
+  const { blobs } = await list({ prefix: "orders/" });
+
+  for (let i = 0; i < blobs.length; i++) {
+    if (blobs[i].pathname.includes(sessionId)) {
+      const response = await fetch(blobs[i].url);
+      const text = await response.text();
+      if (text.startsWith("{")) {
+        return JSON.parse(text);
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+async function saveOrder(orderData) {
+  await put("orders/" + orderData.sessionId + ".json", JSON.stringify(orderData), {
+    access: "public",
+    contentType: "application/json",
+  });
+}
+
+async function pollKieStatus(taskId) {
+  const response = await fetch(
+    "https://api.kie.ai/api/v1/generate/record-info?taskId=" + taskId,
+    { headers: { "Authorization": "Bearer " + process.env.KIE_API_KEY } }
+  );
+
+  const text = await response.text();
+  if (!text.startsWith("{")) return null;
+
+  const data = JSON.parse(text);
+  if (data.code !== 200 || !data.data) return null;
+
+  return data.data;
+}
+
+function extractAudioUrl(kieData) {
+  const resp = kieData.response;
+
+  if (resp) {
+    if (resp.sunoData && resp.sunoData.length > 0) {
+      const url = resp.sunoData[0].audioUrl || resp.sunoData[0].streamAudioUrl;
+      if (url) return url;
+    }
+    if (Array.isArray(resp) && resp.length > 0 && typeof resp[0] === "string" && resp[0].startsWith("http")) {
+      return resp[0];
+    }
+    if (typeof resp === "string" && resp.startsWith("http")) {
+      return resp;
+    }
+  }
+
+  if (kieData.audioUrl) return kieData.audioUrl;
+
+  return null;
+}
+
+async function downloadAndSaveAudio(audioUrl, childName) {
+  const audioResponse = await fetch(audioUrl);
+  if (!audioResponse.ok) return null;
+
+  const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+  console.log("Downloaded: " + (audioBuffer.length / 1024 / 1024).toFixed(1) + "MB");
+
+  if (audioBuffer.length < 10000) {
+    console.log("Audio too small (" + audioBuffer.length + " bytes), retrying next poll");
+    return null;
+  }
+
+  const safeName = childName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+  const blob = await put("songs/" + safeName + "-" + Date.now() + ".mp3", audioBuffer, {
+    access: "public",
+    contentType: "audio/mpeg",
+  });
+
+  return blob.url;
+}
+
+async function trySendEmail(orderData) {
+  if (!orderData.customerEmail) return;
+
+  // Check if another poll already sent the email
+  const existingOrder = await findOrder(orderData.sessionId);
+  if (existingOrder && existingOrder.emailSent) {
+    console.log("Email already sent by another poll, skipping");
+    return;
+  }
+
+  try {
+    const { sendSongReadyEmail } = await import("@/lib/email");
+    await sendSongReadyEmail({
+      to: orderData.customerEmail,
+      childName: orderData.childName,
+      songUrl: orderData.songUrl,
+      lyrics: orderData.lyrics,
+      successPageUrl: orderData.successPageUrl,
+    });
+    console.log("Email sent!");
+
+    orderData.emailSent = true;
+    await saveOrder(orderData);
+  } catch (e) {
+    console.error("Email err:", e.message);
+  }
+}
+
+const FAILED_STATUSES = ["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "SENSITIVE_WORD_ERROR"];
+
+async function handleGeneratingOrder(orderData, sessionId) {
+  try {
+    const kieData = await pollKieStatus(orderData.sunoTaskId);
+    if (!kieData) {
+      return NextResponse.json({ status: "processing", childName: orderData.childName });
+    }
+
+    const audioUrl = extractAudioUrl(kieData);
+
+    if (audioUrl && audioUrl.startsWith("http")) {
+      // Lock to prevent duplicate processing
+      orderData.status = "completing";
+      await saveOrder(orderData);
+      console.log("Locked order as completing");
+
+      console.log("Downloading: " + audioUrl);
+      const songUrl = await downloadAndSaveAudio(audioUrl, orderData.childName);
+
+      if (!songUrl) {
+        // Download failed or too small — reset for retry
+        orderData.status = "generating";
+        await saveOrder(orderData);
+        return NextResponse.json({ status: "processing", childName: orderData.childName });
+      }
+
+      orderData.songUrl = songUrl;
+      orderData.status = "complete";
+      orderData.completedAt = new Date().toISOString();
+      orderData.emailSent = false;
+      await saveOrder(orderData);
+      console.log("DONE! " + songUrl);
+
+      await trySendEmail(orderData);
+
+      return NextResponse.json(orderData);
+    }
+
+    if (FAILED_STATUSES.includes(kieData.status)) {
+      orderData.status = "failed";
+      await saveOrder(orderData);
+      return NextResponse.json(orderData);
+    }
+
+    return NextResponse.json({ status: "processing", childName: orderData.childName });
+  } catch (pollErr) {
+    console.error("Poll err:", pollErr.message);
+    try {
+      orderData.status = "generating";
+      await saveOrder(orderData);
+    } catch (e) {}
+    return NextResponse.json({ status: "processing", childName: orderData.childName });
   }
 }
