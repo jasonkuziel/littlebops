@@ -39,20 +39,14 @@ export default function SuccessPage() {
         .catch(function(err) {
           failCount++;
           console.error("Status check failed:", err);
-          if (failCount >= 10) {
+          if (failCount >= 20) {
             setStatus("failed");
             clearInterval(interval); clearInterval(timer);
           }
         });
     }, 5000);
 
-    // Timeout after 10 minutes — something is seriously wrong
-    var timeout = setTimeout(function() {
-      setStatus("failed");
-      clearInterval(interval); clearInterval(timer);
-    }, 600000);
-
-    return function() { clearInterval(interval); clearInterval(timer); clearTimeout(timeout); };
+    return function() { clearInterval(interval); clearInterval(timer); };
   }, []);
 
   var css = `
@@ -103,7 +97,11 @@ export default function SuccessPage() {
             Creating your song
           </h1>
           <p style={{ fontFamily: "'DM Sans'", fontSize: 16, color: C.textMid, marginBottom: 36 }}>
-            This usually takes 1–3 minutes
+            {elapsed < 120
+              ? "This usually takes 1–3 minutes"
+              : elapsed < 300
+              ? "Taking a bit longer than usual — hang tight!"
+              : "Still working! This page is your permanent link — you can bookmark it and come back anytime."}
           </p>
 
           {/* Progress steps */}
@@ -142,9 +140,16 @@ export default function SuccessPage() {
             })}
           </div>
 
-          <p style={{ fontFamily: "'DM Sans'", fontSize: 13, color: C.textLight, marginTop: 20 }}>
-            {elapsed}s elapsed
-          </p>
+          {elapsed >= 120 && (
+            <div style={{
+              marginTop: 20, padding: "14px 20px", borderRadius: 14,
+              background: C.bgWarm, border: "1px solid " + C.border,
+            }}>
+              <p style={{ fontFamily: "'DM Sans'", fontSize: 13, color: C.textMid, lineHeight: 1.5 }}>
+                Bookmark this page — it's your permanent song link. You can close this tab and come back anytime.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -163,7 +168,7 @@ export default function SuccessPage() {
           <p style={{ fontFamily: "'DM Sans'", fontSize: 16, color: C.textMid, lineHeight: 1.6, marginBottom: 28 }}>
             {status === "failed"
               ? "We hit a snag creating the song. Please contact us at hello@getlittlebops.com and we'll make it right."
-              : "We couldn't find this order. Please check your email for the song link, or contact us at hello@getlittlebops.com."}
+              : "We couldn't find this order. Please contact us at hello@getlittlebops.com and we'll help you out."}
           </p>
           <a href="/" style={{
             fontFamily: "'DM Sans'", fontWeight: 700, fontSize: 15, color: C.coral, textDecoration: "none",
