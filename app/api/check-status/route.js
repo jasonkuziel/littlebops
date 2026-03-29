@@ -134,16 +134,18 @@ async function handleGeneratingOrder(orderData, sessionId) {
     const audioUrl = extractAudioUrl(kieData);
 
     if (audioUrl && audioUrl.startsWith("http")) {
+      // Re-read order to check if another poll already handled this
+      const freshOrder = await findOrder(sessionId);
+      if (freshOrder && freshOrder.status === "complete") {
+        return NextResponse.json(freshOrder);
+      }
+      if (freshOrder && freshOrder.status !== "generating") {
+        return NextResponse.json({ status: "processing", childName: orderData.childName });
+      }
+
       // Lock to prevent duplicate processing
       orderData.status = "completing";
       await saveOrder(orderData);
-
-      // Re-read to verify we won the lock (prevent concurrent polls both downloading)
-      const freshOrder = await findOrder(sessionId);
-      if (freshOrder && freshOrder.status !== "completing") {
-        console.log("Another poll already completed this order, skipping");
-        return NextResponse.json({ status: "processing", childName: orderData.childName });
-      }
       console.log("Locked order as completing");
 
       console.log("Downloading: " + audioUrl);
