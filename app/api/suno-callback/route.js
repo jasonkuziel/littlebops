@@ -1,6 +1,46 @@
 import { NextResponse } from "next/server";
 import { put, list } from "@vercel/blob";
 
+/**
+ * Look up order by taskId using the tasks/ index, then fall back to scanning.
+ */
+async function findOrderByTaskId(taskId) {
+  // Fast path: direct lookup via task index
+  try {
+    const { blobs } = await list({ prefix: "tasks/" + taskId });
+    if (blobs.length > 0) {
+      const indexRes = await fetch(blobs[0].downloadUrl);
+      const indexData = await indexRes.json();
+      if (indexData.sessionId) {
+        const { blobs: orderBlobs } = await list({ prefix: "orders/" + indexData.sessionId });
+        if (orderBlobs.length > 0) {
+          const orderRes = await fetch(orderBlobs[0].downloadUrl);
+          const orderData = await orderRes.json();
+          if (orderData.sunoTaskId === taskId) {
+            return orderData;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log("Task index lookup failed, falling back to scan");
+  }
+
+  // Slow fallback: scan all orders (for orders created before the index existed)
+  try {
+    const { blobs } = await list({ prefix: "orders/" });
+    for (let i = 0; i < blobs.length; i++) {
+      try {
+        const res = await fetch(blobs[i].downloadUrl);
+        const data = await res.json();
+        if (data.sunoTaskId === taskId) return data;
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 export const maxDuration = 60;
 
 /**
@@ -62,23 +102,7 @@ export async function POST(request) {
     console.log("Audio URL: " + audioUrl);
 
     // Find the order that matches this task ID
-    const { blobs } = await list({ prefix: "orders/" });
-    let orderBlob = null;
-    let orderData = null;
-
-    for (let i = 0; i < blobs.length; i++) {
-      try {
-        const res = await fetch(blobs[i].downloadUrl);
-        const data = await res.json();
-        if (data.sunoTaskId === taskId) {
-          orderBlob = blobs[i];
-          orderData = data;
-          break;
-        }
-      } catch (e) {
-        // Skip invalid entries
-      }
-    }
+    const orderData = await findOrderByTaskId(taskId);
 
     if (!orderData) {
       console.error("Could not find order for task: " + taskId);

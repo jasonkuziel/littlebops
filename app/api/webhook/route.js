@@ -81,6 +81,12 @@ export async function POST(request) {
           access: "public",
           contentType: "application/json",
         });
+
+        // Save task-to-order index for fast callback lookup
+        await put("tasks/" + taskId + ".json", JSON.stringify({ sessionId: session.id }), {
+          access: "public",
+          contentType: "application/json",
+        });
         console.log("Order saved with generating status!");
         console.log("Suno will call back when the song is ready.");
 

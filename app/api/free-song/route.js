@@ -71,6 +71,12 @@ export async function POST(request) {
       access: "public",
       contentType: "application/json",
     });
+
+    // Save task-to-order index for fast callback lookup
+    await put("tasks/" + taskId + ".json", JSON.stringify({ sessionId: sessionId }), {
+      access: "public",
+      contentType: "application/json",
+    });
     console.log("Free order saved!");
 
     return NextResponse.json({
